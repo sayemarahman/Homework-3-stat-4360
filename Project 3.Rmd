@@ -1,0 +1,277 @@
+---
+title: "Project 3"
+output: pdf_document
+date: "2024-02-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(MASS)
+diabetes <- read.table("C:/Users/sayem/Downloads/diabetes.csv", sep=",", header = T)
+# renaming columns to get rid of .. at the end of each variable
+names(diabetes) <- c("Pregnancies", "Glucose", "BloodPressure", "SkinThickness",
+                     "Insulin", "BMI", "DiabetesPedigreeFunction", "Age", "Outcome")
+head(diabetes)
+```
+Question 1
+(a) Perform an exploratory analysis of data.
+```{r}
+# make the full model
+full_model <- glm(Outcome~Age+BloodPressure+BMI+DiabetesPedigreeFunction+
+                    Glucose+Insulin+Pregnancies+SkinThickness, 
+                  family = binomial(), data = diabetes)
+summary(full_model)
+# make a reduced model without SkinThickness as it has a p-value above 0.05
+reduced_model <- glm(Outcome~Age+BloodPressure+BMI+DiabetesPedigreeFunction+
+                       Glucose+Insulin+Pregnancies, family = binomial(),
+                     data = diabetes)
+summary(reduced_model)
+# confidence interval
+confint(reduced_model, level = 0.95)
+data <- data.frame(Age = 40, BloodPressure = 70, BMI = 30,
+                   DiabetesPedigreeFunction = 0.5, Glucose = 120, Insulin = 100,
+                   Pregnancies = 5)
+predict(reduced_model, newData = data, interval = 'predict') 
+# make a correlation
+correlation <- cor(diabetes[,c("Outcome", "Age", "BloodPressure", "BMI",
+                              "DiabetesPedigreeFunction", "Glucose", "Insulin",
+                              "Pregnancies")])
+
+print(correlation)
+# make a scatter plot
+pairs(diabetes[, c("Outcome", "Age", "BloodPressure", "BMI",
+                   "DiabetesPedigreeFunction", "Glucose", "Insulin",
+                   "Pregnancies")], main = "Scatterplots")
+# getting the summary of the data set
+summary(diabetes)
+```
+(b) Build a “reasonably good” logistic regression model for these data. There is
+no need to explore interactions. Carefully justify all the choices you make in 
+building the model.
+```{r}
+# took out SkinThickness as it has a p-value above 0.05
+reduced_model <- glm(Outcome~Age+BloodPressure+BMI+DiabetesPedigreeFunction+
+                       Glucose+Insulin+Pregnancies, family = binomial(),
+                     data = diabetes)
+summary(reduced_model)
+```
+(c) Write the final model in equation form. Provide a summary of estimates of 
+the regression coefficients, the standard errors of the estimates, and 95% 
+confidence intervals of the coefficients. Interpret the estimated coefficients
+of at least two predictors. Provide training error rate for the model.
+```{r}
+final_model <- glm(Outcome~Age+BloodPressure+BMI+DiabetesPedigreeFunction+
+                    Glucose+Insulin+Pregnancies, family = binomial(),
+                  data = diabetes)
+summary(final_model)
+# confidence intervals
+confint(final_model)
+fitted_results <- predict(final_model, type = "response")
+predicted_outcome <- ifelse(fitted_results > 0.5, 1, 0)
+misclassError <- mean(predicted_outcome != diabetes$Outcome)
+cat("Training Error Rate: ", misclassError)
+```
+2. Consider the diabetes dataset from #1. Use all predictors for all the models 
+considered for this problem.
+(a) Fit a logistic regression model using all predictors in the data. Provide 
+its error rate, sensitivity, and specificity based on training data.
+```{r}
+# logistic regression model
+full_model <- glm(Outcome~Age+BloodPressure+BMI+DiabetesPedigreeFunction+
+                    Glucose+Insulin+Pregnancies+SkinThickness, 
+                  family = binomial(), data = diabetes)
+# Predict probabilities
+predict_probability <- predict(full_model, type = "response")
+# Convert probabilities to binary predictions (0 or 1)
+predicted_classes <- ifelse(predict_probability > 0.5, 1, 0)
+outcome <- diabetes$Outcome
+# Calculate confusion matrix
+conf_matrix <- table(outcome, predicted_classes)
+# Calculate accuracy
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+# Calculate sensitivity (true positive rate)
+sensitivity <- conf_matrix[2, 2] / sum(conf_matrix[2, ])
+cat("Sensitivity:", sensitivity, "\n")
+# Calculate specificity (true negative rate)
+specificity <- conf_matrix[1, 1] / sum(conf_matrix[1, ])
+cat("Specificity:", specificity, "\n")
+# Calculate error rate
+error_rate <- 1 - accuracy
+cat("Error Rate:", error_rate, "\n")
+```
+(b) Write your own code to estimate the test error rate of the model in (a)
+using LOOCV.
+```{r}
+# getting number of observations
+observations <- nrow(diabetes)
+predicted_classes <- rep(NA, observations)
+full_model <- glm(Outcome~Age+BloodPressure+BMI+DiabetesPedigreeFunction+
+                    Glucose+Insulin+Pregnancies+SkinThickness, 
+                  family = binomial(), data = diabetes)
+# LOOCV
+for (i in 1:observations) {
+  training_data <- diabetes[-i, ]
+  # Fitting logistic regression model on training data
+  model <- glm(Outcome ~ ., family = binomial(), data = training_data)
+  
+  # Predict class for observation i
+  predicted_classes[i] <- ifelse(predict(model, newdata = diabetes[i, ], 
+                                         type = "response") > 0.5, 1, 0)
+}
+conf_matrix <- table(diabetes$Outcome, predicted_classes)
+
+# Calculate accuracy
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+
+# Calculate test error rate
+error_rate <- 1 - accuracy
+cat("Test Error Rate:", error_rate, "\n")
+```
+(c) Verify your results in (b) using a package. You can use cv.glm in R, or you 
+may use the caret package (https://topepo.github.io/caret/) for doing so as it 
+is not restricted to the GLMs.
+```{r}
+# Load required library
+library(boot)
+
+# Define the logistic regression model function
+glm_func <- function(data, indices) {
+  fit <- glm(Outcome ~ ., family = binomial(), data = data[indices, ])
+  return(fit)
+}
+
+# Perform LOOCV
+cv_result <- cv.glm(data = diabetes, glmfit = full_model)
+
+# Extract the estimated test error rate
+test_error_rate <- cv_result$delta[1]
+
+# Print the estimated test error rate
+cat("Estimated Test Error Rate using LOOCV:", test_error_rate, "\n")
+
+```
+(d) For the logistic regression model you proposed in #1, estimate the test 
+error rate using LOOCV
+```{r}
+
+```
+(e) Repeat (d) using LDA from Mini Project #2.
+```{r}
+
+```
+(f) Repeat (d) using QDA from Mini Project #2.
+```{r}
+
+```
+(g) Fit a KNN with K chosen optimally using the LOOCV estimate of test error 
+rate. Repeat (d) for the optimal KNN. (You may explore tune.knn function for 
+finding the optimal value of K but this is not required.)
+```{r}
+
+```
+3. (a) Make a scatterplot of the data and superimpose the 45 degree
+line. Next, make a boxplot of absolute values of differences in the measurements
+from the two methods. Comment on the extent of agreement between the methods. 
+Note that the methods would have perfect agreement if all the points in the 
+scatterplot fell on the 45 degree line, or equivalently, all the differences 
+were zero.
+```{r}
+# Load the data
+oxygen_saturation <- read.delim("~/oxygen_saturation.txt")
+plot(oxygen_saturation$osm, oxygen_saturation$pos, 
+     xlab = "OSM", ylab = "POS",
+     main = "Scatterplot of Oxygen Saturation Measurements",
+     xlim = c(80, 100), ylim = c(80, 100))
+# 45 degree line
+abline(a = 0, b = 1, col = "red")  
+oxygen_saturation$pos <- as.double(oxygen_saturation$pos)
+# Calculate absolute differences
+abs_diff <- abs(oxygen_saturation$osm - oxygen_saturation$pos)
+
+# Boxplot of absolute differences
+boxplot(abs_diff, 
+        main = "Boxplot of Absolute Differences",
+        ylab = "Absolute Differences")
+
+```
+(c) Provide a point estimate ˆθ of θ. 
+```{r}
+# doing point estimate
+calculate_theta_hat <- function(sample_data) {
+  D <- sample_data$pos - sample_data$osm
+  abs_dff <- abs(D)
+  return(quantile(abs_diff, 0.90))
+}
+theta_hat <- calculate_theta_hat(oxygen_saturation)
+theta_hat
+
+```
+(d) Write your own code to compute (nonparametric) bootstrap estimates of bias 
+and standard error of ˆθ, and a 95% upper confidence bound for θ computed using 
+the percentile method. Interpret the results.
+```{r}
+# Given data
+B <- 1000  # Number of bootstrap samples
+
+# Bootstrap resampling
+bootstrap_theta_hat <- replicate(B, {
+  # Generate bootstrap sample indices
+  bootstrap_indices <- sample(nrow(sample_data), replace = TRUE)
+  
+  # Calculate theta_hat for bootstrap sample
+  bootstrap_theta <- calculate_theta_hat(sample_data[bootstrap_indices, ])
+  
+  # Return theta_hat for bootstrap sample
+  return(bootstrap_theta)
+})
+
+# Compute bias
+bias <- mean(bootstrap_theta_hat) - theta_hat
+
+# Compute standard error
+standard_error <- sd(bootstrap_theta_hat)
+
+# Compute 95% upper confidence bound using percentile method
+upper_confidence_bound <- quantile(bootstrap_theta_hat, 0.95)
+
+# Print results
+print(paste("Bias:", bias))
+print(paste("Standard Error:", standard_error))
+print(paste("95% Upper Confidence Bound:", upper_confidence_bound))
+```
+(e) Repeat the computation in (d) using boot package in R, or check bootstrap function from the
+SciPy library ( scipy.stats.bootstrap) in Python, and compare your results.
+```{r}
+#install.packages("boot")
+library(boot)
+# Define a function to calculate theta_hat
+calculate_theta_hat <- function(data, indices) {
+  D <- data[indices, "OSM"] - data[indices, "POS"]
+  abs_D <- abs(D)
+  return(quantile(abs_D, 0.90))
+}
+
+# Bootstrap resampling using boot() function
+boot_results <- boot(data, statistic = calculate_theta_hat, R = 1000)
+
+# Compute bias
+bias <- mean(boot_results$t) - calculate_theta_hat(boot_results)
+
+# Compute standard error
+standard_error <- sd(boot_results$t)
+
+# Compute 95% upper confidence bound using percentile method
+upper_confidence_bound <- quantile(boot_results$t, c(0.95))
+
+# Print results
+print(paste("Bias:", bias))
+print(paste("Standard Error:", standard_error))
+print(paste("95% Upper Confidence Bound:", upper_confidence_bound))
+
+```
+
+
